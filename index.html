@@ -1,82 +1,764 @@
-/**
- * FEEDBACK ROUTING — reference version.
- *
- * IMPORTANT: This is a *reference* doPost that handles BOTH registration and
- * feedback by routing on the `formType` field. Do NOT paste it blindly over
- * your existing script — your current doPost probably also sends the
- * confirmation email and writes a backup row, and you don't want to lose that.
- *
- * Instead, do ONE of the following:
- *
- *   (A) If your existing doPost is simple (just appends a row), replace it
- *       with the version below and fill in YOUR_SPREADSHEET_ID.
- *
- *   (B) If your existing doPost does more (email, backup), keep it and just
- *       add the routing bit: near the top, read formType, and if it's
- *       "feedback", write to the Feedback tab and return early — BEFORE the
- *       registration-only logic (confirmation email, Meet link, etc.).
- *       The `writeFeedback_` helper below is all you need for that path.
- */
-
-function doPost(e) {
-  var data = JSON.parse(e.postData.contents);
-
-  // Route feedback to its own tab and stop — no confirmation email, no Meet link.
-  if (data.formType === 'feedback') {
-    return writeFeedback_(data);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feedback · Lekòl Ayiti A 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0d1b2a;
+    --ink-2:#1b3a4b;
+    --paper:#faf6ef;
+    --paper-2:#f2ebdd;
+    --red:#c1272d;
+    --red-deep:#8f1d21;
+    --gold:#c79a3a;
+    --line:rgba(13,27,42,.12);
+    --muted:#5a6b76;
+    --ok:#1f7a52;
+    --shadow:0 24px 60px -28px rgba(13,27,42,.45);
+    font-size:clamp(16px,1.1vw + 12px,19px);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    color:var(--ink);
+    background:var(--paper);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
   }
 
-  // ---- existing registration handling goes here ----
-  // (append row to Registrations, send confirmation email, backup, etc.)
-  return writeRegistration_(data);
+  #rail{position:fixed;top:0;left:0;right:0;height:4px;background:transparent;z-index:40}
+  #rail span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--red),var(--gold));transition:width .5s cubic-bezier(.4,0,.2,1)}
+
+  #brand{position:fixed;top:22px;left:26px;z-index:30;display:flex;align-items:center;gap:12px}
+  #brand .mark{height:36px;width:auto;display:block}
+  #brand .wm{font-family:'Fraunces';font-weight:600;font-size:.78rem;line-height:1.05;color:var(--ink)}
+  #brand .wm small{display:block;font-family:'Inter';font-weight:500;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+
+  #counter{position:fixed;bottom:20px;left:26px;z-index:30;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  #counter b{color:var(--red);font-weight:600}
+
+  #deck{position:relative;height:100dvh;width:100%}
+  .slide{
+    position:absolute;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    padding:96px 8vw 120px;
+    opacity:0;visibility:hidden;
+    transform:translateY(38px);
+    transition:opacity .45s ease,transform .55s cubic-bezier(.19,1,.22,1);
+    pointer-events:none;z-index:1;
+  }
+  .slide.active{opacity:1;visibility:visible;transform:none;pointer-events:auto;z-index:2}
+  .slide.up{transform:translateY(-38px)}
+  .wrap{width:100%;max-width:660px}
+
+  .eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:.72rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--red);margin-bottom:20px}
+  .eyebrow .n{font-family:'Fraunces';font-size:.9rem;color:var(--ink)}
+  .eyebrow .n b{color:var(--red)}
+  .eyebrow::before{content:"";width:26px;height:1.5px;background:var(--gold)}
+
+  h1{font-family:'Fraunces';font-weight:600;font-size:clamp(1.9rem,4.6vw,3.1rem);line-height:1.05;letter-spacing:-.015em}
+  h2{font-family:'Fraunces';font-weight:600;font-size:clamp(1.5rem,3.4vw,2.25rem);line-height:1.14;letter-spacing:-.01em}
+  .sub{margin-top:16px;font-size:1.02rem;line-height:1.55;color:var(--muted);max-width:52ch}
+  .q-hint{margin-top:10px;font-size:.9rem;color:var(--muted)}
+
+  .field{margin-top:34px}
+  input[type=text],input[type=email]{
+    width:100%;border:0;border-bottom:2px solid var(--line);
+    background:transparent;font-family:'Fraunces';font-weight:500;
+    font-size:clamp(1.4rem,3vw,1.9rem);color:var(--ink);
+    padding:6px 2px 12px;transition:border-color .3s;
+  }
+  textarea{
+    width:100%;border:1.5px solid var(--line);border-radius:12px;
+    background:rgba(255,255,255,.5);font-family:'Inter';font-weight:400;
+    font-size:1.05rem;line-height:1.5;color:var(--ink);
+    padding:16px 18px;resize:vertical;min-height:132px;transition:border-color .3s;
+  }
+  input::placeholder,textarea::placeholder{color:rgba(13,27,42,.28)}
+  input:focus,textarea:focus{outline:none;border-color:var(--red)}
+
+  /* rating scale */
+  .scale{margin-top:30px;display:flex;gap:10px;flex-wrap:wrap}
+  .scale button{
+    flex:1 1 0;min-width:52px;border:1.5px solid var(--line);border-radius:12px;
+    background:rgba(255,255,255,.5);cursor:pointer;padding:16px 4px 12px;
+    font-family:'Fraunces';font-weight:600;font-size:1.35rem;color:var(--ink);
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+    transition:border-color .18s,background .18s,transform .12s,box-shadow .18s;
+  }
+  .scale button:hover{border-color:var(--ink-2);transform:translateY(-2px)}
+  .scale button.sel{border-color:var(--red);background:#fff;box-shadow:var(--shadow)}
+  .scale button .cap{font-family:'Inter';font-weight:500;font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .scale.wide button{min-width:38px;font-size:1.1rem;padding:13px 2px 10px}
+
+  .choices{margin-top:30px;display:flex;flex-direction:column;gap:12px}
+  .choices.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .choice{
+    display:flex;align-items:center;gap:14px;
+    border:1.5px solid var(--line);border-radius:12px;
+    background:rgba(255,255,255,.5);
+    padding:15px 18px;cursor:pointer;text-align:left;width:100%;
+    font-family:'Inter';font-size:1rem;color:var(--ink);
+    transition:border-color .18s,background .18s,transform .12s,box-shadow .18s;
+  }
+  .choice:hover{border-color:var(--ink-2);transform:translateX(3px)}
+  .choice.sel{border-color:var(--red);background:#fff;box-shadow:var(--shadow)}
+  .choice .key{
+    flex:0 0 auto;width:30px;height:30px;border-radius:7px;
+    border:1.5px solid var(--line);display:grid;place-items:center;
+    font-family:'Fraunces';font-weight:600;font-size:.9rem;color:var(--muted);
+    transition:.18s;
+  }
+  .choice.sel .key{background:var(--red);border-color:var(--red);color:#fff}
+  .choice.multi .key{border-radius:7px}
+  .choice .lbl b{display:block;font-weight:600}
+  .choice .lbl small{display:block;color:var(--muted);font-size:.82rem;margin-top:2px;font-weight:400}
+
+  /* rating grid */
+  .grid-rate{margin-top:28px;display:flex;flex-direction:column;gap:14px}
+  .grid-rate .gr-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .grid-rate .gr-lbl{flex:1 1 190px;font-size:.98rem;font-weight:500}
+  .grid-rate .gr-scale{display:flex;gap:7px}
+  .grid-rate .gr-scale button{
+    width:42px;height:42px;border:1.5px solid var(--line);border-radius:10px;
+    background:rgba(255,255,255,.5);cursor:pointer;font-family:'Fraunces';
+    font-weight:600;font-size:1rem;color:var(--ink);transition:.15s;
+  }
+  .grid-rate .gr-scale button:hover{border-color:var(--ink-2)}
+  .grid-rate .gr-scale button.sel{border-color:var(--red);background:var(--red);color:#fff}
+
+  .foot{margin-top:34px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .btn{
+    font-family:'Inter';font-weight:600;font-size:1rem;cursor:pointer;border:0;
+    padding:14px 26px;border-radius:10px;background:var(--ink);color:var(--paper);
+    display:inline-flex;align-items:center;gap:10px;transition:transform .12s,background .2s,box-shadow .2s;
+    box-shadow:0 10px 24px -12px rgba(13,27,42,.6);
+  }
+  .btn:hover{background:var(--red);transform:translateY(-1px)}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none;background:var(--ink)}
+  .btn.ghost{background:transparent;color:var(--muted);box-shadow:none;padding:14px 8px}
+  .btn.ghost:hover{color:var(--ink);background:transparent}
+  .enter-hint{font-size:.8rem;color:var(--muted)}
+  .enter-hint kbd{font-family:'Inter';font-weight:600;background:var(--paper-2);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 7px;font-size:.78rem;color:var(--ink)}
+  .skip-hint{font-size:.8rem;color:var(--muted)}
+  .err{color:var(--red);font-size:.85rem;margin-top:12px;font-weight:500;display:none}
+  .err.show{display:block}
+
+  .intro-art{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap-reverse}
+  .intro-copy{flex:1 1 340px;min-width:280px}
+  .flag{flex:0 0 auto;width:118px;height:auto;border-radius:14px;overflow:hidden;box-shadow:var(--shadow);border:6px solid #fff;transform:rotate(-3deg)}
+  .flag svg{display:block;width:100%;height:auto}
+  .anon-note{margin-top:26px;border:1.5px dashed var(--gold);border-radius:14px;padding:18px 20px;background:#fff;font-size:.95rem;line-height:1.55;color:var(--ink-2)}
+  .anon-note b{color:var(--ink)}
+
+  .summary{margin-top:26px;border:1.5px solid var(--line);border-radius:14px;overflow:hidden;background:rgba(255,255,255,.5)}
+  .summary .row{display:flex;justify-content:space-between;gap:16px;padding:13px 18px;border-bottom:1px solid var(--line);font-size:.95rem}
+  .summary .row:last-child{border-bottom:0}
+  .summary .row span{color:var(--muted);flex:0 0 auto;max-width:45%}
+  .summary .row b{font-weight:600;text-align:right}
+
+  .done-mark{width:64px;height:64px;border-radius:50%;background:var(--ok);display:grid;place-items:center;margin-bottom:24px;box-shadow:0 14px 30px -12px var(--ok)}
+  .done-mark svg{width:30px;height:30px;stroke:#fff;stroke-width:3;fill:none}
+  .meet{margin-top:26px;border:1.5px dashed var(--gold);border-radius:14px;padding:20px;background:#fff}
+  .meet .lab{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .meet .cal{margin-top:6px;font-size:1rem;color:var(--ink-2);line-height:1.6}
+  .meet .cal b{font-family:'Fraunces';color:var(--ink)}
+
+  .spin{width:18px;height:18px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  @media (max-width:560px){
+    .slide{padding:88px 22px 110px}
+    .choices.grid2{grid-template-columns:1fr}
+    #brand .wm{display:none}
+    .foot{gap:12px}
+    .scale{gap:7px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .slide{transition:opacity .2s}
+    .choice:hover,.scale button:hover{transform:none}
+  }
+
+  #lang{position:fixed;top:22px;right:26px;z-index:30;display:inline-flex;
+    border:1.5px solid var(--line);border-radius:999px;overflow:hidden;background:rgba(255,255,255,.55);
+    font-family:'Inter';font-weight:600;font-size:.78rem}
+  #lang button{border:0;background:transparent;color:var(--muted);padding:7px 14px;cursor:pointer;
+    transition:.18s;letter-spacing:.03em}
+  #lang button.on{background:var(--ink);color:var(--paper)}
+  #lang button:not(.on):hover{color:var(--ink)}
+  @media (max-width:560px){#lang{top:18px;right:16px}}
+</style>
+</head>
+<body>
+<div id="rail"><span></span></div>
+
+<div id="lang">
+  <button data-lang="en">EN</button>
+  <button data-lang="fr">FR</button>
+</div>
+
+<div id="brand">
+  <img class="mark" alt="Lekòl Ayiti A" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAH0AAACICAYAAADK3+SPAAA3wElEQVR42u19eZSdVZXvb+9z7q2kQhJIGGIICYmMiQyKtgJtV5gURbAZEpEhkRlxdaO8Z7d20wvjk/a5pOUpLm1QIe3UQhCxG0RQMSUIOKSVKQSSAAkhc6pSldRw7z1n7/fHN53z3VuAkKGi+da6JFTdqtzvO+fs4bd/+7eB9Oro6LAAKgCyP1/vywKopL9vl79UldJ7eqPPJX82s2bNMth97b525EXZbn73u9/92V//+td7M7OKCIEZlhkAICIQkegHmRnMDDKUnAivcM4BgDJbOmjatJeXPb/sc957AqC74gknIv3yl7+8z/XXX39t96buChgQEZLkoZSeBQBw/pyYGUTJs/GqEOeSHwf4yBlH/vKJp5+4Q1UZgOzoe8tMMDHzx9ra2vZqa2sDEcEYAyaCqELEQzXdIekKEhGYCGACpd8R8fA+2SDGmBXM/Dnv/S55GmbOnGlU1Z900klngfD37Xu0Q0TBTOkiE1Szh5E8DyJKdrcqKP2aKuDFwzuPbPf3bu09VUTuIiLZGffG2V8arr5RRBwR1ZmNA5EThVPAgcgxswOTA5NjJkcEJ1Anok5VHQBHxM4YUxfxrlZvdO3KJrCzs9NXK1Vds2bdlfVa3TFzjQ05InIgOCD5O3H6NYVTVUeqDgQnqs5577x4B4UzzI6NccaYWt3Vp3z84x8/G4DsjNgnX3RRWCKyzGQVYkW8VYiFqgVgFZoFM1YBC5AlkAXUqqoVFQvAMpM1xlqQml3PqCdXGmjpeXPnHN+9uesIYw0TUVtyv7Aqar14q6rFK30OXsWqV6uipe+TJSJrrbEDAwP02KOPXWqtRWdnp+60RTfMqFQqIOLQr6XmikBKrT1z8obkvZq8wViGtbvsmmPBggXEzPjDot/NdY2GIZBAE3MNQu7nsntWFH+mTyMOmgAQJ38XUeO91+eWPvfO00//0JsA+HAdduiik+Eo+IAmN1U4Li0WWZMbUySOvvD3mrwdSUyQ/apd7GIA/rbbbhu/acOmc+v1OlTVJDdIYGIQMQiUb/LsWamEi6+JD083CyHx95L8jB+s1UZ3da3+OCcRIO2ck06cfnDJ15eCz6ItT3i2r4PdrgrZRYO34JnoV7761dk9mzePZmaX5uogSu6TUARu+clOvhgFuwBF70vNA5iSnGfdunXnee9HpKd9xy86Z2Y9vJHAZIdmKzdzmelHEMlmiy+7qnGHEBFWr3r5ovSWSKNNTkPnvukTohbvyd1f8i2qVCq+u3vTpDnnz/lgAI7t2EWPPlhmmgggTu13ejO5WVc0bQakKUpgxnbJAO6qq666pd6oHcNMQoBBbrIpNdmaxzvFZi9SV0WSsoW+P98ZmjxYZkb/QD8W/XHRxarKnZ2dssMXXVTyBc/sU26WgtOf7+IAcqFonxfpwC4YwIGZ9bHfPHapiHClUpUk107dVmD5cjNf2uyEsuVD/LyKzcAAtLu7++R/+Id/eDMAue6663jHnvSy+aJw75Z8fBjIpcEeBT9OQI7U7SpX+sD9PffcM6m3p/cDUCgTGUT3VQRp+dmg3J23flYoRfuSxz9kjfWDg4O0aNGiywBg3rx5O3jRAzQw27XawkTnhk6CFI6osAHpzzDvWjWFefPmMRHha1/72od7envbjTEieQCXbX+KEMlocbNvB2ldGPsUMU6a/iZfZecc1qxec46qjk4QW6UduOjBxiRKo5d8DVFkoRQufWr6NU1IKN0AwQ/uQgGciNjly5df3KjXhw7EoowmOPVaOjGlny2gWkAp+T2qYADS1d019YILLjg5g3934KJzyfdQc4qWRi75TqU0T09/MDP3lMYIu1gAJ1f/r6tP6O7efJiIeBExTfs2P8TBCYYmi5hFvsHz0nQD5DFPEBNQmuZZa7B161Z98smnrjLG6I4I6LgVwqalraqk+S4lzm44NXlZYBPudqKWrmE4B3DWWjz28G8v7u/vgzEmi82jNDXy0+UgVvPkrlhcDX9DaP0p/B3GWotNmzb+9Wc/+9nDdkRAN4R5LwWemucaBTQbQxBpVSl2EbvClfpQf/fdd09Yv37tGen2NflJbeH6soUNF4+UACmAmiy9LeI4Cl5pHpSeGWb29Xp9xAMPPHABEWHhwoXbddGHAASa4QUNMtHkxigPaFQ12eTZQovsMotOSYTuPv3pT5+6ZeuWdmOtExWbg04UmOngnqgcrpeenpKWUlmK/huYChARDwwOYNWqlz8iIv9KRAO0Ha0lN8fu5Uhdi12d3mixZwuToPwKkO0wXvM0Yq7W6vWPN+oNEIiTe219tcaYhZbqEGHeHj63/HikMRDlFpSK4DgtYqkqG2N8d3fX/rPPmv3exJCo2e7mnZsxxaS4gAA7DpAoBFE98gpc4f92BZc+a9YsBoDZs2cf293ddRQIkrBZNI1RqemER6cv2xBo4e81xTWpKWBKsh1KsHxODwsTa6PRwPMrX7jCmO0bwDNaQcoBht50LgK2SO7PWmwY7ALWfcGCBWAiXfLss1cNDgyqNTaBTvKsS4eoFKanmLTp3vNDQiF6owWUneXvqaHXIsozIOiKlSuOveqqq/bBdiy58itavpLporxqlId1wUPRKILnYe7T0whZbrz55kmbNm48NT1dhkqns7QwAfaefFPC+Dx0AwEwX6T31OQCtChQkWHjnfNjHn/yyb9Lfw/tsEUPS4VhlKrB3VNwnMOUblfx6WmErHf94AfneO/HMLNPyJBFHq75xk/Tr9Rkh+XSEKsjIi2eXYHLhwvehOQFQSERsYrHypUr54pIBdup5MpDGa88uOQAWMiNXhHQ5GWHbPejOA3D+ers7PSqatevW3dZrV4DJ8yItKiCtGQcGD0q6gwRcpk+H+c96vU6ZcxhAoGYwaV6uohkRbli8YtvMxH5Lb09k0877YzTA+Boey06NfusEFKkJBcNWSE5OBOhD7vAUZ8FAwBzLp5z/KaNGw6HQrwIq6Q+mjSM0lqar+y0MzHqroH29vbGQQcdsro2WAMRKVrkMhE3oRQQhid/cGAQSxY/fZGq8oIFC7bnSdcodyy7kzD3pHB1Ax9PQYA6rD168hz194/9/rJ6rU5IXHMYwwaVUEJUeQwrZlCIiIcCbZURv3rve0+9sr29HUwsRYqHiKNAKYcqgmaDyD7Bali39vedOnv2hVO2R0DHLQx7gQ9TnK8XKFMe24Z1p8CRtYAth1cA57/97Tum9vT0ni5elIiMkiK+FSpSNg147RqQKJKeAK3YCiZNnvzfN9zwhf/ee+99XkojcRGRlDeXeoU0ao9BHuRcuuRQKRljvHMN+9xzT1766gH3G1n0qEBCse9Wii1A2XdnMK0G7wUNy+OeQZzf+8/b5tbrtTFsuChnUoGN56RQCrZ5bpIDdijIjh0ztu/YY//qducctY0ccZuIwjsvoklsz2WMOgK/KIK7083FCmDjxo2zb7vtthEpdkbb6aRny6XB2SVQatZzuLW8PUijsIAIYMPD0bdTGsC1L1+6bM7g4CCYmPP8WqmUViGweFoUHykJ0owxvlKpYK8997rji1/84joiwgkdHd9looF6vc4UANeJC9S4mEXRv1JUKxWsIs55d9BPfvLTc5E0RZhtvugS7cBkoQvGR1w+VYqBBY0gWXlVbHpnI3AfvuDDJ/T0bJ5qjBGFckSEQMxpy32yFv6dKeG4AWBjjc444qhvE5FOnz69ctNNNy0dPXr0g5VKhY21LqSVE1GQ+pWALUq48dnfmYn6+vp00R/+Z46q0rYsuRYnPVr1DFoNc8s0GKGCIZOUkEPfXSBNwzGCzzhwzy5Z+tH+gQFlJs3MeNi4kPvarFpaZpQkJ1gajQaPat/jqTvu+P5CALR48WJRVUw7+OBbRowcCWamPA6QjA0bxz3ILGgWLGsGdyeVvq29vSdccslHZ2Ablly5paEv48X5YhdHn/K4TfPgJkxv/DAjRmYB3M0333zQ+nXrZnJC8WKUG3fC1IMo5cBRYLkUIoJ6o64AMHHipG8455CaXw+AHvyPn/18j/b2l7xzRqESNkVQ+qgLxFKL36tShE2qsNb6gYF+LF78xGVEhHnz5tE2XXTO/6pF+TSMbqKulmKHFszAsv+TYXXaFy5cyESEW2+99dzBgYFR1lrfRHXJP39YMKISJKsQFa3X6zxyxMjNV1xx6Z2qipkzZ0r6FkP7U7+ttH3Lew/fcKIqBbsmTouiYkUWH+X8hCR9w+o1L59z11137bmtArp80b34UkAR+Dctlw7Ttc5Oe1htzKIdHVZrTp2dnV5EeP369Rc55xLXHGYiqUPVDImjEGgu/VfVV2yF9t1n33svvPDCNQDsvHnzJLUoAgDnfPhDPx45ciTqjYYhYjA4byjR9FQ34zcFlTp9MRG52uDgxK985SvvB6DbIqDjocstcXCTRaJ5oK4xa5ooBiGGEwqfBnD6gbM++MHNmzdPTdM0LgLO1K+GiGLQ+FF0pyQBnLWWR40ahWkHHXJzGYNMF5+v/8xnHh87euyvrLVkrPVp4FcE7BR3DEWWNbWglPx7NDA4oKvXrLlSVc22COg4Ct5QLChSpCiDXjVAEyjIMDUEagLTGHHBdn4Ap6pKG9es+0Sj4Yio/Mk0D6oQAFGlQwgCgZmFiHiPPfZ48u6773w0/aFyYYSJSA+bfth/JAgdaXYoolAQZYtYVC2poKcZFdW+vr53X3vtZ44FoG8Uj+cQS84/FBWkHuKYAJlbRM247hTa9YKAwTxcUjYGIOdfcsnkF19c+c40beK8SJQtsJZ69YJ6Q1gYEVVhYzBh3wnfJSLX0dHRylp6APjEJz5xx6hRo9Z5EatpPTYkTRIRwM3wPgVUclWFMUZ6ejbj9tu/dyYAXbBgAW2bk84U4ERFBJmnMWGwmbI+sqCNwrROA/BJh82i4/nFS+bWa4NVZnIJxqR5ZF7UC4NeNdKI3Jjt63q9Ziq26i6ee8UvAWQBXDPYBtiTTjpp6+TJkx9s1BvqnPOi8aYK4yVSKm0+DS2lIRD6+vrPfeihh/bKsoRtEr0XWYnmQERWTy/8juanPCP/NyFNYQlx51+ycuXKkatefuk8SQibnEXIoDJjVZuC2AIbF4j33jUc9tt3399c/rGLfgeAswCuRRyhIoIDpk79WtuINvKizEzRgocNFBoES00EzOQPJ+on3nDDlz78RgO6qK0p7uAombq8X42aTndUVUsPfKKylHOXPW3/1SsvvbKjPlg7lIg8UmkkUIweK8UhaEEZK+5CRNDePpL223e/rzcaDRrCtGdxhAdA37711t+OH7f3U6RgIpJSy3IOdoUAV0wzT3N7NtTf16/PPrfkIlWtvJGALu5wUQry9FaIPKIIU7VFI0AA2e7sq7OzU621+tKal65ouAastYFZDTpQVWO8mcKgNYNIWZiJx47dc83Xv/D1e4kICzsX+lfZdIaI6lMPmvatSrUC57xE0iRMUQydb4CS4EG6LIaZdfPm7rfPnn3+kQBkFl5fQMehOQ5blBJoQKP2HShFAE1Igy6bd8tmZ3PfGYC/5pprJnV1d59CRCoiHKJjzds6q3dTsZGLBRAC01577fXDqW+dujn1s/oqm84DwMVz5/6gUq32eucMU+a9C4g7rNHnjY8a8pKS505M0tvTqy+//NI/VioVLMCCN3bSo4CFNAdcNIhwqdSa3lJ8IAvueKefdAaAn/3iF3MH+vtHqaoXUdKA7NVk0oIbjKIUBeq1Oo0YOVLf977TfwiAZs2a9Vp8lwLgcz987trx4/b+ia1UyBgrAfiZgDQhb0EBTemWRXEm4yCSYSasXbv6tAceeGACXmeXa0x3D4gDQJGuRGCFxk06IYoUQosFwrdzEDgAfs2aNaNeXrVqbqPRQAZ35+XTFi1Y+UIHTKmUqSoiYkaMGPE/n/vcZx4GQKnPfi3AEIkXOvDAyV8fMXKEevHFYVKNn3e++lRw5yhg7yiora3N927pbf/Hf/z0aQDo9XS5RqIEGkkgBgoqQZBDpGUsp4hwUYoDd1Icl0a2+rGPfewDUBxsjEkpR5SnoplMWm46QyJYVlKV5MR58dLW1obph864+xVy86ECOgGAe++997d77rnTS4ODNZMUJynuXydtCoNimDinU5NrNLC5e/NHrbWauZDXCc4g4rBnW50C0IWIirYc0hR5i5UZciu5E617Z2enqCotXbbs0lp9UK01gRNLUyLWEpGz1JZEyCVQRcWMGDGyfvy7Zt4JoLJhwwZGoQz9ai8zadKkEUTkJuz3pu9Uq1UQkc8WPS+uBDp92uK0FEGnGO+9bNi47qizzjrrXUEF8fWZ9xA51wJ7LB3d1L+Ue7ED+HZnIu9ZE8PnP//5g3s2b55JIIjEfWFZV3HWW1506aahkxblVGb2bdUqHXLIwT+69rOfXAKgsXjx4joA91pfq1atGgDgFi588P+N22vcZhExydmJLWtISM2aIBCkxdmLmaVer9uXVq36JBPrn1pytSEiV5B7XoHJnLXphBsi9ztFX+bOMu2pbov89Kc/vayvr88CcCJis5pBvtWz9FSDPr2s8BDVmpSq1Tb09/ePbRs58n9XDKjWcCJOAAEEAjDAwsmfzOAKwyQsaySSel4F4Lb2drf3uL26VHVPFRUiooxAUbjTUL+Houee4Qls2LCIrnl59cl3LLhjyjnnnLPyuuuuGxIoGnrRpagqZd0dFO9/FPhbVmajogmAUKKJ7xSnnnWhjp46ddo59UZDjTFMUQWrKHNRePKJYvUsKCT5OtdqdSxdtvTUUe0jT4UCtiIQH4BPRAX8TEFCRpRTxCVVx+7t6YUxBlBlUQ3o40XxJUECQz2/KLEAVMkY4wZrg2O+//3vnw3gSwsXLjR4jTLiUbMDtWxKpKKArmV6lJakSiiW6NjBjj2DJj/wgQ+c3Ne39UAmEkrvMT9FAdtVg02QtRTHrVuUHwRjjIiIE9VE1dkYZ4x1xljHzI4NOyZOFKGRqmcDjlSdijoickzkbMVqUoyikFicsGZSOfVsAxapMkX9cqoKZuatW7fi2WeXXpaWXP2f7NOVY5EzBPRcyuhygaxW3q+e1tgpcAhFbr/jAzhjjC5btvxjA4MDmtWww46zWAcvRbtKQr/hfs8ibFVlKApV7FTdGYBNvp6qY2sWwGXq2IlCtqgkStBBBFHOHjIeXYRwRtiI5odKVJiZZO3aNYdcdNFFHWl6aP60ky5FMFOA0VpCq+I+bcpUpbKdGGiu7Og2lzSA049c/pHDN27a+O6KrYCITazaXFJoDgmf5YccarC0kiKh8GhQRIoowl6NZUoQgz4aEFTCSmZTD3wuuhyLObIx4lyDH//D45cys77WFihG6SzkNocKP50JhiVaaFGfZtyIp5RUo2THK0ulAZy+uGzlJ4hQTXJzLXWHIhA8jADEODdGoI7VQhw5ilk08LuIlTVzNUkEFbT4SZcyoKKMnStHp70GOU4f9BgykVFV7eruOv273/3uRAD+taRvRWmVy/oEVHSuQEvwZHGqY105hBwvqtVqrzWXfUOvY445pgKAHnnkkXEvLF9+uvdeFWpaZ7xBsaPMhKUARkZMnohqEMgYRdRSJ7joOweixmSlQM2j1PsfoltSplIhbhLl5AOJKDGR9G7p3eMb3/jWh4LN/9qidwnMtlL8j0QVtKB/O77j5A6ZGNYYVG3VVStVtyNO+aJFiwAA35o//6Kent4J4sUlUxhiF5UDHIE4YqxoHS9C0d6EfJNTHOIWaJqiVCANdfUoDYADUeEmDgJF8XBRcGkRYyEw+cw0ODiInp7N/0tVv0FEfXiV3mEb1tNzfy4I2nAQ5Y0UIhylKD7LUIyx6OndPGX6EW/5pncOhjn57d7DiYN6zVuD0iFHCQVbkr+LCASStNep5hsyD8uMgTWJu254j0ajRgDrj++666TBwX6tVCrc6oznik1BEaNZ7CnI26O4trTRQyRPooAvqtgV+IpGbVL5hqKwdF1kGJrV4qhoMiNBgYYWMRZXq1W/Zs2a/S+ec/G7APy8o6PDdnZ2utew6IW/zndoxpsrsTnCKCTE59PTRMyE7s3d4zb3bL5E8VqkSMInHyACQS2gwKqLtCabJCVe0r8LbKUCStV7wjXSUMILUboe0LfD+6SmYFRFo8kX8QnVUp95ULcInmWyYCGoQYg490qJgnaAEkbZRAAmZb7fWquDtUFd9Pgf5jLzz19tLkxJlKAkrhJG7Nqa3Uqp2cqzHmIgYY0qCI6QTDFCPtGJHHGSzyavZPJRAlmSU2j+/8lkpGAiUpr7iojz3jsR7xRwxOSsMa6tWhXDpgA6NCqkRienWVtGm3w7lZ0+NZMns9NaJn+HmtFEsWY+BarZFBJUNLaoFGQOmaCwUmCl0n9fRGxtcBB9/Vtm33vvvYe+WkBnW+UhoZCClk5ClK6EqVnYe5ENcgHZkPpbfFsCNxG7H0J58A3lqG++PGHLsMZMk8zt5LJm2SnLliBwXdHChdE9AC41OORigC3SPgJautGySn7U368UYf5N1qfExI01AsqFmKQFav269dXrr//83wL4QtqSLa+86FSmwCcYe7l9N8AtwdnclyDNiPNZzYV5ilq1xgY96Joo6Mga5NDIfWV+80FQxeVUKnuvhqpO2cnWXDwo/KyxUhrlQVmx0KVW7BRIyU5k2ALVSmmKchpCDNvmg/syYqRSULGMFSYL9xB2vxZpNROzkwaWL1/+IVX9UmoZWwZ0weCe2IdkI6W0RNsN/V14WopOkFgflUpuIAYpNBcoCkEMYgp65sKWaIlJBigqZfnmUwQnKe8OL0aNBZ+ANIvii2p6rnSaolUaVhEUJV4gChGiINMJwRoKVDbLPAPS2LoQayCMkJS1tcUa5ASMHOdngMDWWlH1bz3xxBPfgaQpgl/FvJcgA4nF7ItdpaWxFRph1KEv1BI40swSCAoVQYSVB1RaNi6EQrGLmgOdkmSOFmYCVDqwGjSIU1OAqgHqWHIbXPLzISgjGilka+SKqEkDX8tIp8bRBZXjqhY166D6CjZWa/Wa9vZuvUZVHx2Ko1iy6TFPLqzA5CJ3VNIvz8ZWEUe8uCa4U1sAGIE4oRZCO82+M2iWzAkOJUWgWLmpFPkSxZXKjIxYupeCQFFitWhxYhEyV0us1eTkccFoTX6BAPBQ9UTkmdkzsydin1CyySvUI2hpTjD5ePJTyNzNNrXEeutQEfbOU1f3pr+94XM3TB4qoCu6Vr0v+swhQdAVRJ3hKIqo4yXzl0XxNYQbMzJASec8ykFDVSoNe+XCcV/pqZLQlLeESQtfmosnDJWBtMDVw8+vQW0hBFTKE6uKZx9j6PVGnev1umk4Z0S8ERHjvTfeO+O9M845540zXoQLBm4MjMdoYcBOpJLRVCVichs3bDB3/eTui4dC6ApETuPcRFrW3JrZMi1Na7DY+cKGYA61KGwEwR416RVRDA61GA9GFPddUWiVAiQO4WeheLxY5rxIk7F7YbVLyxZKACGJiiVZe1IqNaYg0NuOftsf9hi9R1ciKujVe4GqwHsBM0OJqGKMrlix4s0bN2080DDDe6FY1i0s+1I+DoS07CgAUmIRj5UrXzz35Zf1C/vvTwPlgM6WPXqOG2gLQCaiUxSnvFxVy4MM5ohgUQ6VNextpyL9UhT68VRyYNoESoapEBXBUdBbpxF4FMqAoqzmSESJqByVpL9yvL0kqgQNgdVinJeKeGa25tgf3X///f+nKRYooYRzL7747PvuuefOwcFBD8Bk1i1K63JEOBMkLti9QTrNROwHBgYOufzyv50J4L5Zs2ZxyN5tUoGmJhlnCswo5elPFunmgoIUE/hLYXdcIQrEg7PijWpzhqBRN2QzUzREsoFAGibc/aSlb1CxXVJzwszaaDR06tRpa8eO2XNdrVZDGTygV5BIy9m1gdWx1jIIWP7C85fcf//9Y73z1ntvE9NevJxzxntvvnXLLfe0tbW9VK/XjaZABlHczKiheGHmEkljpo0q2BgM1gZ1xYrnrzTG6IIFC3To0ipxzoqNU6KYUZOnWqV8tDyiM+om0TKlt6QwGebNTE1ZQFzliwk7GggTF9OjAr1apaBpoMDEk6YCgYj3bW0jaPz4ff55/N7jv1+tVMFJ31vTpo0gWw2AFSowCWJOEmdmPzDQP+Waq6/pSNFEIOk4Lb/AzLUxY8Z8h5nBzMqR4HBQqwu6WvMglsqzZsDMBt3dXSd9+ctfngJArsN13LK0WqQ1lGbFUuSJ1KLynv27Uq4YpaAOFX6IAmqxBkIH5YCpNY02mJKAUKiwTO+KIooiFQxGiGlJJUsV2kjajbpvvPGGx88///xfV6ttjhJpqAzmTOrrEo/2UM6YZAVfPpQHBwh9fX3aP9h/Tap8IUMQQFRVccIJJ3x71KhRNecco4l4ofkCR/RpAKSMkhIlMZPv7x9o/85/fGcOACzsWDjUopf0SjPGaIkxkyghFhFZ0V9d6DjkqBll04hDkxyulsakg5LZjEiZWsh2IqozZ7VrDUAUBGTFQCNHixw9xcTFO4/x48Y/eOSRRy665pprfnTAlEnLRISZWcLR2Nk9hVh+zD/QqHtFRI0xBvVGo+NTn/rUEQC0VQqVsljNV7/61Wfb29t/KV5IRHwxChWtp2gF2ry5j883BHhwcAAvrlzxkYcffmZ0yqGj2LxT886iiFlCeRdGODxeY3cZTHYKy68UYg8RctV6CnHMr8/TpBC9Cv15qL8euIvyqLAwIg/GzGGPPUbTzI6ZdyYnhGX/N+1/S1tbG7z3UrR6UTO+pOk0agrAINJoUHGlWvFbtvTqo4/85goAOhTJoaOjg7z3OOKII75ZbasmAoXErXrVW7jaLNDUoGJHXKlYD2Da5z//T6ch6GnPP0Cj0Uhz9dhvgWIyQDy3RkszRoMcXSlgncZ2OFRYRcBAjZr0tQB/So1ycXDHFJlTpRIiF47MpHgqtGEWNmzGjRu36uu3fP2/ss8wZ87lPzTW9tZqNaMBQB9CrFFNQMPyKWIWqyjXGw1a/vyyMx955JFxGKLpcOHChR4A3X333fftve++q0XVGDYSVgdD65IoVBWwt2qSdmeADRGjUq2iVhvU5cuXXBZObg5blX2j0XCikpQ1kZY+QY6Jk7KnBmVQTV+AUyJHGeWXKPk6Ff9PpZ8hTUun2YuyUmpGIdb896moS4IdctlWClM3BFh/7sEprX1HVTtNS5oUjMAkqVQqmDr1wP9k5v70eZjZs89YuceoPe7zziXS3iUELj/dwUiPELbNTmgaDzBUXX9/34Qb/+0rpwOtR2sSkXZ0dBhm7h8/fvx8KLThGg1V9VFZOitVA44UDqr5/wNwDCqeo0JFxG3atOm4CxMZcQFgwpRtr5TOWyUiS0SWmS0RBZReSV8F/VdELVStppRfVbWK9H3Z1zI+G8ECZJUyKrFaEKwioQmrihVVqwqL4N8XFaMi1ntPxMUs19wqKbUGa6ikJRNYIk5AEN5zzFj3/ve//1ZVxaxZs9DR0UEA6JRTTv7h6DFjKcndY5Am0tYjbUGajJGySsWSF6+P/uaRswHoUCSHmTNniqrSe04++XuVaoW8920iYkSTZwTAErMlZqtQ61WtiFhJhIwsE1tmY5nZAmobjYb1Xipbtm4Z8dyKZV/MLAxlbJdTTjnl33/329/tV22rCrNhY0xemfBektZjH1CXeIgpixnBUiQmW1IZqUsWy6c17kRhUjPGFIwpRA1c3VHd1WXcuHF/1d29eaIxrBmQgibaUUhMCEqjFCEdMMZ4EW/2nzjpp0ueXfK+RqPBIStAVUdOnTp1UXd392GVakXEC4dl05D1oGX5tBwNLApFRCRsuDFj+oy3d3Z2Pp3epm/J2TSsxx93/JeeeeaZacYYMcZwiPM7J3C+Ae9ckVEZRsVYEDGYAe8FjUYdqiSA0n777dv9zDPPXEJEajPTAuAKDOOrvb0do0aN+v26desmtrW15VRFajnzNJ91FhA4qISCiTIx9p80ecGTTz2Jjo6OzOdpR0eHJaL+v/7rY+cP1gb/r3deQOCQpRqxE8scfw6Jl3l8pPV6vW2wXv80M58vMqR4rooXeuihh67Zls+vu7sr3zT5UUy7I4bd66CDDmoDYC/8yEfe39XdfUzeax6gZIXgUcySSbjrYTCaB2M6OFgzY8aM7f/0p+fdFwRSeacMAHzoQ+d9x7Dp9d4bTa5YBw6FknM+3SoCcxAGqOy9x6qXXnrfQ/c9tC9eWedVt/VzDLtfdoWBqMZa69/+jnfcuWTJkrONYee9tzns2RKmzQIrCke8hwUgXxus8fTp0+94/PHHz3XOmRamlplZjj766HuXL3/+/YB6EEyUmVOJ0RJ09EbjOLMIW8QZY+3b3va2v//FL35x06uxVrfXxcN8wRmA/+frr5+4csXKU9NnaDiFi5sWnEqpGsXlwAz5qzcaGDNmDB1z9DHzU9nupp0za9YsEhGaMWPGfEDVpf4zgVmDWcJp42HY4BARMjNcggjMhgdrg1i6dOklqmp3xKz01nWL4X1ZAO4d73znp5YsXvx5Y4xLsokSmTKX1JQSfVmDBsH8dmVgoJ+nHz5j7aL/WXQoEW1Ba/A3C+japkyesmz9xvX7t7WNECbiuNZAUXNhwV2jsNKbo4bOORk5ciSffvrpx916662PlStgu096AmS0dW/aNCeR6ybO2LoRa0U1qv5l9dqwUKGFs5VR7aNQbat+iYh6U5+nQ/gINsYMHnX0W39SrVTVGiPMZYSsLGNCCAWHwwUHAZVKRbx4/PGPT1yJbaDz+me16FngceFFFx7f09t7uLU26DUHsklIrcw7aXMXaeoP1Is3o0aP7jvnnHN+kBY75BU+A0QE06cf9vVx4/YiACYdpBQ0YgRUcG2SWIwqzEQEY4xRUe3q2njaPffcMwGA21ZjOv4czLshIn/UUUf9cOnSpWdWKtYT2ILKLNwSQQPJtLHihKUGngAidipi99lnvwXLly+dLSIGrz7PlFWVjz766IdWrVr1rmRmmjOhvl65AINWbCMN4gyFM9bYww6b/tFf/WrhzTNnzjQ7MqAblic9Ewu66aabpqzfsOHkZOIxmYipohRg9aXtSxqRKQptOGXDRiZNmPhNEXlNG76jo4OJyB188KHzK5UqGo16NJUh4tOF0qNhPp/OZC0aP5QHBgewfv26K6rV6uuSBftzPOlWVX1HxwnXPPfckhvq9YZLYd2mIfbxcacIA9eotg0Bgcftudfzy59//rAU79fX+Iz0sceeG3PGGX+9tK+vb19rreaTAvJOFW0qiBBCzjtFFTER0Wq1TT5w6mkn3fad2361IwO64XjSs0kJ1NW18bJ6vQ5jKGeKZo0Q8YDjkKCHvAGBgqYAY1iYGQcfdNCPmLmRBnCv5VIA5rjjDuudOHHSg2k65vMlDjpowqlOeYFGi4phWCNgw75WGzRLli255k9RkfizXPRs3sqcOXNOXLdu/cFEJCLBvJUy7p0KBoVqD1EjYKIFp6owI0e2u8PePP0bqvqKAVyrS0QwY8bh3xwxYqQwETMFpJGAI5CXQjPyJWkTTyD9qxHxunLlyhPmz58/Fdtw7tquaN4NG/aHHHzI915e/fJ51tpUYKBMqUZTZa24qSbQxjfqdZ4x4y2LHnvssXdmqs5/6rNSVXPEEUc89dJLqw61FZMUYTRsXWrFHi5o0wU3TzNNfEdM9vDDZvzDY4898sUdhdDxcDTt/3Ltv0zc1NV1pniBJmXDoMkgjtYLTdVA5SoSF1IkLsLSxAkH3ExE8qdouwYBnSEit/fee3+DDcM7LylWG4MyESEEkbJmNJ83xXlrgzXt6uq6SlXHpHNg6S9t0Q0R4YGf//y8RqMxslKp+HygQCZu2GLYfMQDR6DenCIyruF4zOgxGz//L5+7Gxhy7sorXunP0GmnnXZnxVa2qKphwxrquxbEorg9rEkMsAB3uFqtyJatvQf+3cc/fnL675i/NPPOqopp0978RE/P5hkpImdCcZ+Wn7hFM4UW89SceLHTDpz2zSeeeuKyDNp9I9jBoYcedufaNWvOthXrJCGDNHW0llulimlYgVARKRjklYgPmDTpB0888cR5aYC5XaN4O5wQuAULFvg5c+Z8sG/rlukAPAEmokVTWUCgWS2CmlMjHjFihMw4fMatZ559pl28eDFPnz79dd13+rP04IMP3tLd3XV2QlVOe+0oa6cKBASoOX/PYw7ONieMcw3dsnXLmXd+787Dzjn/nCV/is7rrn7SjTHGH3TIIfesXb36NGutE1FL0TiRMggXUKOijuD8vd57byZPnrzo6aeffvs2e2hEOOjgg5esX7f+UGNYVIVbUHeimW/lNu8CygUU6piNPfZd7/rX++6775//5m/+ZrsGdMPipKc723/yk5886Lb5809SVRURm8Go5e0ZyZSW2Lm50hMnD9cYxlvecsQfbrjhhg+u3bDBwnvvvYdP5JlhjMlf6d4D4FGve3jUAQ8YpO+pGjjneN999/W33377qh//138dqmnze86lL09qKCl0hCoS2deZiL1z+OPjj58hIvOIqPGX4NMNEfnjjnvXZ556evF1TOwT8b9QiqSUDLVUSg4UqoJ28hEjR7q9x4+33nm4hkuo3il9m5kTabNgMkHRrCBZlA1rbaLmnH6tr68fvb29KQ8wUYwGmkmSrfx7oUtXaI6JiLfWmmOO+qv3PPDgfT/L3N2f86KTqtrDp09/bs3q1QcaY0RVOR6UR6+Om1Epcw8gW++dz94QypgSxQWTshIVVEHMAQooUElUmCuVCoWbsPw7ykGmZho+LcQdADjvxe49bvwdK1et/JD3frsFdDs9ZUtLqHreeeedtnlz94HM7BUpAhfp0GoLMCYobUZyX9zUamxtxVhrjbXWVKoVU61WTbVaNZVq1VQrVVOpVIytWFOtBP9vrbHZn8aaik2/X60aW7GkQNzM0aICGClcFF12TTNuiMiCVMjQWTfddPOryoLt6ifdqKpMn/6Wu1evXnWGMcarpuM3hprZWlJmRAB+xguAvHepAG00J1VQ2O0ade1Q3I071DD4Ynx08ykvdbqW28YKwkXBqVNVR8T2rUcdfX3nQ53XvsbS76510tOd7D/zmc9M6e7uen/KOGUNNG5aVtWiQCnsldNiMLBo3lUbqWFo3D+npBEmToFbCMkRrY5LHmMqRWrQIS+OAjmwqBKXSrZEECMR1+s1vLDihQu995XtZd7Nzlz0zs5OA0BqjcY1q19++YSU3myaerKjwC2ojyNgu4aunShqrih8N1qKA8WzxXL6TYnj3py2hd+LhPmb6gGxJGgstRZuYhARfKPh9nr00d8+/uyzzzwza9Yss3jx4m06F2VnpmzZvJX2KQdO+VCIyJVNIUWnvUmOpRW8GYzqCP7BcBZ81Apf0tijQOeVAjMerGFOftRWerGJHm4oKhiNq8sVosJsI0VqjIWoYtmypRep6o+2x+jSnWbes4F5J7/35L8ZGBg8JDFlys3zzCkQEdQQXm1GufKceIhJDOnXpSzpVh5fHdTFi2HyaDb16YJnfeQaKUs1u6VIqowC4RRGqMzJ6r329HSfetXFVx2Ymnj+s1j0bGDe6lVrPt63dasaY6JxG1E6U5reTOEc8vC8KkX97+U4oJyaRRsnEDCIZco0ltmi5oAy7mOLc/3MCkV8jzJsHMiIKoSY2ff29pqHf/vwpdtjnXbKomccuC984Qtv6evre68xJmWaAi2VFal14Jy8W5tms5StQE5izDaKSNDiFE9iyGRXmtmWzTlPS/nOMKFUjTZPWTc3NkShEjAYUGzo2jjr/vvvH5We9m1m53dWIGdWrFgh69atu3TTxo0nGWNclpsXDzEQDaPifOYiBlT0kcWie3ETfzJtgpqCuox2FbrV+CgHQ3IUrc10y0AlmLkefQZuCv4yfl0mFxZEc0Qgz8bsvfS55Y+98MLzz82aNYu3VUC3M/J0AoDlXV1jTnn72/+4adOmHIGLtWGLU5+P38jpRxTLb6CkJYdIQbuV8Wh+AlqCTIkiQWRQqNBctF4XqRhFkXgkLYoodmxNogyxgSQg8CLC+++939vlixZ975YrdblkpvVpMSCkxlmZlmYZ7WjnLmuqmpVKzMkVIe6vsBAoV1JcSbaijPXOWyZo6mrqQ7Cw==">
+  <div class="wm">Toronto Haiti Summer School<small>Lekòl Ayiti A</small></div>
+</div>
+
+<div id="deck"></div>
+<div id="counter"></div>
+
+<script>
+/* ==== CONFIG ============================================================ */
+/* Same Apps Script web app as the registration page. The page sends
+   formType:"feedback" so the backend can route rows to the Feedback tab. */
+const ENDPOINT = "";
+/* ======================================================================== */
+
+const data = {};
+const $ = (s,r=document)=>r.querySelector(s);
+
+let lang = (navigator.language||'en').toLowerCase().indexOf('fr')===0 ? 'fr' : 'en';
+
+const flagSVG = `<svg viewBox="0 0 90 60"><rect width="90" height="30" fill="#00209f"/><rect y="30" width="90" height="30" fill="#d21034"/><rect x="30" y="18" width="30" height="24" fill="#fff"/><circle cx="45" cy="30" r="6" fill="#00863c"/></svg>`;
+
+/* ---- all copy, per language ---- */
+const T = {
+  en:{
+    press:'press', enter:'Enter', ok:'OK', start:'Start',
+    q:'Question', of:'of', optional:'Optional — you can skip', skip:'Skip',
+    errAnswer:'Please add an answer to continue.',
+    errPick:'Please pick an option to continue.',
+    errEmail:'That email looks off — mind checking it?',
+    errSubmit:'Something went wrong — please try again.',
+    errSave:"We couldn't save that just now — please try again.",
+    sending:'Sending…', reviewLabel:'Review',
+    intro:{
+      eyebrow:'2026 Edition · Post-event feedback',
+      h1:'How was Lekòl Ayiti A this year?',
+      sub:'A few minutes of your thoughts shape next year. This survey is anonymous — you only share your email at the end if you want us to follow up.',
+      note:'<b>This survey is anonymous.</b> Your answers aren\u2019t linked to you unless you choose to share your email at the very end.'
+    },
+    scaleCaps:{low:'Poor',high:'Excellent'},
+    nps:{low:'Not likely',high:'Very likely'},
+    review:{ eyebrow:'Almost done', h:'Ready to send your feedback?',
+      confirm:'Send feedback', edit:'Go back',
+      note:'You can go back and change any answer before sending.' },
+    done:{ h1:'Thank you.',
+      sub:'Your feedback is in. It genuinely shapes how we plan the next edition.',
+      meetLab:'Save the date',
+      cal:'<b>Lekòl Ayiti A 2027</b> \u00b7 August 4\u20136, 2027.<br>We hope to see you there.' },
+    steps:[
+      {key:'role',eyebrow:'About you',q:'Which best describes your role?',grid:true,
+        options:[{v:'Student'},{v:'Academic / Researcher'},{v:'Industry professional'},{v:'Artist'},{v:'Activist'},{v:'Entrepreneur'},{v:'Religious leader'},{v:'Other'}]},
+      {key:'location',eyebrow:'About you',q:'Where are you based?',hint:'Country or region.',placeholder:'e.g. Montréal, Canada'},
+      {key:'firstTime',eyebrow:'About you',q:'Is this your first Lekòl Ayiti A event?',
+        options:[{v:'Yes'},{v:'No'}]},
+      {key:'heardVia',eyebrow:'About you',q:'How did you hear about LAA 2026?',grid:true,
+        options:[{v:'A friend or colleague'},{v:'Social media'},{v:'Email newsletter'},{v:'A previous edition'},{v:'Community organization'},{v:'Other'}]},
+
+      {key:'overall',eyebrow:'Overall experience',q:'Overall, how would you rate the event?',scale:5},
+      {key:'nps',eyebrow:'Overall experience',q:'How likely are you to recommend LAA to a colleague?',scale:11,zero:true,npsLabel:true},
+      {key:'enjoyedMost',eyebrow:'Overall experience',q:'What did you enjoy most?',textarea:true,optional:true,placeholder:'Tell us what stood out…'},
+      {key:'enjoyedLeast',eyebrow:'Overall experience',q:'What did you enjoy least, or what fell short of your expectations?',textarea:true,optional:true,placeholder:'Be honest — this helps us improve…'},
+      {key:'ratingGrid',eyebrow:'Overall experience',q:'How would you rate each of these?',gridRate:true,
+        rows:[{k:'content',l:'Content quality'},{k:'relevance',l:'Session relevance'},{k:'pacing',l:'Scheduling & pacing'},{k:'registration',l:'Registration process'}]},
+
+      {key:'onlineOverall',eyebrow:'The online-only format',q:'How would you rate the online-only experience overall?',scale:5},
+      {key:'networking',eyebrow:'The online-only format',q:'How did you find the networking and interaction opportunities online?',scale:5},
+      {key:'networkingText',eyebrow:'The online-only format',q:'Anything about networking online you\u2019d like to add?',textarea:true,optional:true,placeholder:'Optional…'},
+      {key:'onlineBetter',eyebrow:'The online-only format',q:'What would make the online experience even better?',textarea:true,optional:true,placeholder:'Ideas welcome…'},
+
+      {key:'attend2027',eyebrow:'Looking ahead · LAA 2027 · Aug 4–6',q:'The next edition is August 4\u20136, 2027. Will you plan to attend?',
+        options:[{v:'Yes'},{v:'Probably'},{v:'Unsure'},{v:'No'}]},
+      {key:'topics2027',eyebrow:'Looking ahead · LAA 2027',q:'What topics, themes, or sessions would you like to see in 2027?',textarea:true,optional:true,placeholder:'Your suggestions…'},
+      {key:'formats',eyebrow:'Looking ahead · LAA 2027',q:'Which formats interest you most?',multi:true,grid:true,
+        options:[{v:'Talks'},{v:'Workshops'},{v:'Panels'},{v:'Networking'},{v:'Tutorials'},{v:'Poster sessions'}]},
+      {key:'speakers',eyebrow:'Looking ahead · LAA 2027',q:'Are there speakers or organizations you\u2019d like us to invite?',textarea:true,optional:true,placeholder:'Optional…'},
+      {key:'suggestions',eyebrow:'Looking ahead · LAA 2027',q:'Any suggestions to improve the overall event?',textarea:true,optional:true,placeholder:'Optional…'},
+
+      {key:'expertise',eyebrow:'Your expertise & getting involved',q:'What are your main areas of expertise?',textarea:true,optional:true,placeholder:'A few words or a short list…'},
+      {key:'contribute',eyebrow:'Your expertise & getting involved',q:'Would you be interested in contributing to a future event?',multi:true,
+        options:[{v:'Speaking'},{v:'Running a workshop'},{v:'Moderating'},{v:'Reviewing submissions'},{v:'Sponsoring'},{v:'Organizing committee'},{v:'Not at this time'}]},
+      {key:'volunteer',eyebrow:'Your expertise & getting involved',q:'Would you be willing to volunteer to help organize LAA 2027?',
+        options:[{v:'Yes'},{v:'Maybe'},{v:'No'}]},
+      {key:'volunteerDetail',eyebrow:'Your expertise & getting involved',q:'If yes or maybe — what would you like to help with, and roughly how much time could you offer?',textarea:true,optional:true,placeholder:'Optional…'},
+
+      {key:'activities',eyebrow:'Staying connected between meetings',q:'LAA runs activities year-round — which would you like to take part in?',multi:true,grid:true,
+        options:[{v:'Webinars'},{v:'Online community forum'},{v:'Working groups'},{v:'Regional / local meetups'},{v:'Mentorship'},{v:'Social media'}]},
+      {key:'betweenActivities',eyebrow:'Staying connected between meetings',q:'What kinds of between-meeting activities would be most valuable to you?',textarea:true,optional:true,placeholder:'Optional…'},
+
+      {key:'email',eyebrow:'Staying in touch',q:'If you\u2019d like us to be able to reach you, share the email you registered with.',hint:'This survey is anonymous. Providing your email is optional and only lets us follow up about volunteering, speaking, or a project you mention. Leave it blank to stay anonymous.',input:'email',optional:true,placeholder:'name@example.com'},
+      {key:'project',eyebrow:'Anything else',q:'Do you have a project you would like us to know more about?',textarea:true,optional:true,placeholder:'Tell us about it…'},
+      {key:'anythingElse',eyebrow:'Anything else',q:'Anything else you\u2019d like to share?',textarea:true,optional:true,placeholder:'The floor is yours…'}
+    ]
+  },
+  fr:{
+    press:'appuyez sur', enter:'Entrée', ok:'OK', start:'Commencer',
+    q:'Question', of:'sur', optional:'Facultatif — vous pouvez passer', skip:'Passer',
+    errAnswer:'Veuillez répondre pour continuer.',
+    errPick:'Veuillez choisir une option pour continuer.',
+    errEmail:'Cette adresse semble incorrecte — pouvez-vous vérifier ?',
+    errSubmit:'Une erreur s\u2019est produite — veuillez réessayer.',
+    errSave:'Impossible d\u2019enregistrer pour l\u2019instant — veuillez réessayer.',
+    sending:'Envoi…', reviewLabel:'Révision',
+    intro:{
+      eyebrow:'Édition 2026 · Commentaires après l\u2019événement',
+      h1:'Comment s\u2019est passée l\u2019édition de cette année ?',
+      sub:'Quelques minutes de vos réflexions façonnent l\u2019an prochain. Ce sondage est anonyme — vous ne partagez votre courriel qu\u2019à la fin, si vous souhaitez un suivi.',
+      note:'<b>Ce sondage est anonyme.</b> Vos réponses ne sont pas liées à vous, sauf si vous choisissez de partager votre courriel tout à la fin.'
+    },
+    scaleCaps:{low:'Faible',high:'Excellent'},
+    nps:{low:'Peu probable',high:'Très probable'},
+    review:{ eyebrow:'Presque terminé', h:'Prêt·e à envoyer vos commentaires ?',
+      confirm:'Envoyer', edit:'Revenir',
+      note:'Vous pouvez revenir et modifier toute réponse avant d\u2019envoyer.' },
+    done:{ h1:'Merci.',
+      sub:'Vos commentaires sont bien reçus. Ils orientent vraiment la préparation de la prochaine édition.',
+      meetLab:'Notez la date',
+      cal:'<b>Lekòl Ayiti A 2027</b> \u00b7 4\u20136 août 2027.<br>Au plaisir de vous y voir.' },
+    steps:[
+      {key:'role',eyebrow:'À propos de vous',q:'Qu\u2019est-ce qui décrit le mieux votre rôle ?',grid:true,
+        options:[{v:'Étudiant·e'},{v:'Universitaire / Chercheur·se'},{v:'Professionnel·le'},{v:'Artiste'},{v:'Militant·e'},{v:'Entrepreneur·e'},{v:'Leader religieux·se'},{v:'Autre'}]},
+      {key:'location',eyebrow:'À propos de vous',q:'Où êtes-vous établi·e ?',hint:'Pays ou région.',placeholder:'ex. Montréal, Canada'},
+      {key:'firstTime',eyebrow:'À propos de vous',q:'Est-ce votre premier événement Lekòl Ayiti A ?',
+        options:[{v:'Oui'},{v:'Non'}]},
+      {key:'heardVia',eyebrow:'À propos de vous',q:'Comment avez-vous entendu parler de LAA 2026 ?',grid:true,
+        options:[{v:'Un·e ami·e ou collègue'},{v:'Réseaux sociaux'},{v:'Infolettre'},{v:'Une édition précédente'},{v:'Organisme communautaire'},{v:'Autre'}]},
+
+      {key:'overall',eyebrow:'Expérience globale',q:'Dans l\u2019ensemble, comment évaluez-vous l\u2019événement ?',scale:5},
+      {key:'nps',eyebrow:'Expérience globale',q:'Quelle est la probabilité que vous recommandiez LAA à un·e collègue ?',scale:11,zero:true,npsLabel:true},
+      {key:'enjoyedMost',eyebrow:'Expérience globale',q:'Qu\u2019avez-vous le plus apprécié ?',textarea:true,optional:true,placeholder:'Dites-nous ce qui vous a marqué·e…'},
+      {key:'enjoyedLeast',eyebrow:'Expérience globale',q:'Qu\u2019avez-vous le moins apprécié, ou qu\u2019est-ce qui n\u2019a pas répondu à vos attentes ?',textarea:true,optional:true,placeholder:'Soyez honnête — cela nous aide à nous améliorer…'},
+      {key:'ratingGrid',eyebrow:'Expérience globale',q:'Comment évaluez-vous chacun de ces aspects ?',gridRate:true,
+        rows:[{k:'content',l:'Qualité du contenu'},{k:'relevance',l:'Pertinence des séances'},{k:'pacing',l:'Horaire et rythme'},{k:'registration',l:'Processus d\u2019inscription'}]},
+
+      {key:'onlineOverall',eyebrow:'Le format en ligne',q:'Comment évaluez-vous l\u2019expérience en ligne dans son ensemble ?',scale:5},
+      {key:'networking',eyebrow:'Le format en ligne',q:'Comment avez-vous trouvé les occasions de réseautage et d\u2019échange en ligne ?',scale:5},
+      {key:'networkingText',eyebrow:'Le format en ligne',q:'Souhaitez-vous ajouter quelque chose sur le réseautage en ligne ?',textarea:true,optional:true,placeholder:'Facultatif…'},
+      {key:'onlineBetter',eyebrow:'Le format en ligne',q:'Qu\u2019est-ce qui rendrait l\u2019expérience en ligne encore meilleure ?',textarea:true,optional:true,placeholder:'Vos idées sont les bienvenues…'},
+
+      {key:'attend2027',eyebrow:'Perspectives · LAA 2027 · 4–6 août',q:'La prochaine édition aura lieu du 4 au 6 août 2027. Comptez-vous y participer ?',
+        options:[{v:'Oui'},{v:'Probablement'},{v:'Incertain·e'},{v:'Non'}]},
+      {key:'topics2027',eyebrow:'Perspectives · LAA 2027',q:'Quels sujets, thèmes ou séances aimeriez-vous voir en 2027 ?',textarea:true,optional:true,placeholder:'Vos suggestions…'},
+      {key:'formats',eyebrow:'Perspectives · LAA 2027',q:'Quels formats vous intéressent le plus ?',multi:true,grid:true,
+        options:[{v:'Conférences'},{v:'Ateliers'},{v:'Tables rondes'},{v:'Réseautage'},{v:'Tutoriels'},{v:'Séances d\u2019affiches'}]},
+      {key:'speakers',eyebrow:'Perspectives · LAA 2027',q:'Y a-t-il des intervenant·e·s ou des organismes que vous aimeriez que nous invitions ?',textarea:true,optional:true,placeholder:'Facultatif…'},
+      {key:'suggestions',eyebrow:'Perspectives · LAA 2027',q:'Avez-vous des suggestions pour améliorer l\u2019événement dans son ensemble ?',textarea:true,optional:true,placeholder:'Facultatif…'},
+
+      {key:'expertise',eyebrow:'Votre expertise & implication',q:'Quels sont vos principaux domaines d\u2019expertise ?',textarea:true,optional:true,placeholder:'Quelques mots ou une courte liste…'},
+      {key:'contribute',eyebrow:'Votre expertise & implication',q:'Seriez-vous intéressé·e à contribuer à un événement futur ?',multi:true,
+        options:[{v:'Prendre la parole'},{v:'Animer un atelier'},{v:'Modérer'},{v:'Évaluer des propositions'},{v:'Commanditer'},{v:'Comité organisateur'},{v:'Pas pour le moment'}]},
+      {key:'volunteer',eyebrow:'Votre expertise & implication',q:'Seriez-vous prêt·e à vous porter volontaire pour aider à organiser LAA 2027 ?',
+        options:[{v:'Oui'},{v:'Peut-être'},{v:'Non'}]},
+      {key:'volunteerDetail',eyebrow:'Votre expertise & implication',q:'Si oui ou peut-être — avec quoi aimeriez-vous aider, et combien de temps pourriez-vous offrir ?',textarea:true,optional:true,placeholder:'Facultatif…'},
+
+      {key:'activities',eyebrow:'Rester en lien entre les rencontres',q:'LAA propose des activités toute l\u2019année — auxquelles aimeriez-vous participer ?',multi:true,grid:true,
+        options:[{v:'Webinaires'},{v:'Forum communautaire en ligne'},{v:'Groupes de travail'},{v:'Rencontres régionales / locales'},{v:'Mentorat'},{v:'Réseaux sociaux'}]},
+      {key:'betweenActivities',eyebrow:'Rester en lien entre les rencontres',q:'Quels types d\u2019activités entre les rencontres vous seraient les plus utiles ?',textarea:true,optional:true,placeholder:'Facultatif…'},
+
+      {key:'email',eyebrow:'Rester en contact',q:'Si vous souhaitez que nous puissions vous joindre, indiquez le courriel utilisé lors de votre inscription.',hint:'Ce sondage est anonyme. Fournir votre courriel est facultatif et sert uniquement à un suivi concernant le bénévolat, une prise de parole ou un projet que vous mentionnez. Laissez vide pour rester anonyme.',input:'email',optional:true,placeholder:'nom@exemple.com'},
+      {key:'project',eyebrow:'Autre chose',q:'Avez-vous un projet dont vous aimeriez nous parler ?',textarea:true,optional:true,placeholder:'Parlez-nous-en…'},
+      {key:'anythingElse',eyebrow:'Autre chose',q:'Souhaitez-vous ajouter autre chose ?',textarea:true,optional:true,placeholder:'La parole est à vous…'}
+    ]
+  }
+};
+
+function tr(){ return T[lang]; }
+
+/* ---------- build step list from current language ---------- */
+function buildSteps(){
+  const t=tr();
+  const arr=[{type:'intro'}];
+  t.steps.forEach((s,i)=>{
+    let type='input';
+    if(s.options) type=s.multi?'multi':'choice';
+    else if(s.textarea) type='textarea';
+    else if(s.scale) type='scale';
+    else if(s.gridRate) type='gridrate';
+    arr.push(Object.assign({type, input:s.input||'text', n:i+1, required:!s.optional}, s));
+  });
+  arr.push({type:'review'});
+  arr.push({type:'done'});
+  return arr;
 }
 
-/**
- * Appends a feedback submission to the "Feedback" tab of the SAME spreadsheet.
- * Header row is written automatically on first run, and any new fields added
- * later are appended as new columns so nothing silently drops.
- */
-function writeFeedback_(data) {
-  var ss = SpreadsheetApp.openById('YOUR_SPREADSHEET_ID'); // same sheet as registrations
-  var sheet = ss.getSheetByName('Feedback');
-  if (!sheet) {
-    sheet = ss.insertSheet('Feedback');
+let steps = buildSteps();
+const deck = $('#deck');
+let idx = 0;
+let letterKeys = [];
+
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function qCount(){ return steps.filter(s=>s.n).length; }
+
+function renderDeck(){
+  deck.innerHTML='';
+  steps.forEach((st,i)=>{
+    const el=document.createElement('section');
+    el.className='slide';el.dataset.i=i;
+    el.innerHTML=buildSlide(st);
+    deck.appendChild(el);
+  });
+}
+
+function buildSlide(st){
+  const t=tr();
+  if(st.type==='intro') return introHTML();
+  if(st.type==='done')  return doneHTML();
+  if(st.type==='review')return reviewHTML();
+
+  const eb = `<div class="eyebrow"><span class="n"><b>${st.n}</b>/${qCount()}</span> ${esc(st.eyebrow)}</div>`;
+  const hint = st.hint?`<p class="q-hint">${esc(st.hint)}</p>`:'';
+  let body='';
+
+  if(st.type==='input'){
+    body=`<div class="field"><input type="${st.input}" data-inp placeholder="${esc(st.placeholder)}" autocomplete="off"></div>`;
+  }
+  if(st.type==='textarea'){
+    body=`<div class="field"><textarea data-inp placeholder="${esc(st.placeholder||'')}"></textarea></div>`;
+  }
+  if(st.type==='scale'){
+    const n=st.scale, start=st.zero?0:1;
+    const caps = st.npsLabel?t.nps:t.scaleCaps;
+    const wide = n>6?' wide':'';
+    let btns='';
+    for(let v=start; v<start+n; v++){
+      const lowCap = v===start?`<span class="cap">${esc(caps.low)}</span>`:'';
+      const highCap = v===start+n-1?`<span class="cap">${esc(caps.high)}</span>`:'';
+      const cap = (v===start||v===start+n-1)?(v===start?lowCap:highCap):'<span class="cap">&nbsp;</span>';
+      btns+=`<button data-scale data-key="${esc(st.key)}" data-v="${v}">${v}${cap}</button>`;
+    }
+    body=`<div class="scale${wide}">${btns}</div>`;
+  }
+  if(st.type==='gridrate'){
+    const rows=st.rows.map(r=>{
+      let cells='';
+      for(let v=1;v<=5;v++) cells+=`<button data-gridrate data-key="${esc(st.key)}" data-row="${esc(r.k)}" data-v="${v}">${v}</button>`;
+      return `<div class="gr-row"><div class="gr-lbl">${esc(r.l)}</div><div class="gr-scale">${cells}</div></div>`;
+    }).join('');
+    body=`<div class="grid-rate">${rows}</div>`;
+  }
+  if(st.type==='choice'||st.type==='multi'){
+    const cls = st.grid?'choices grid2':'choices';
+    const multi = st.type==='multi';
+    const opts = st.options.map((o,j)=>{
+      const k=String.fromCharCode(65+j);
+      const sub=o.s?`<small>${esc(o.s)}</small>`:'';
+      return `<button class="choice${multi?' multi':''}" data-choice data-multi="${multi?1:0}" data-key="${esc(st.key)}" data-idx="${j}" data-k="${k}">
+        <span class="key">${k}</span>
+        <span class="lbl"><b>${esc(o.v)}</b>${sub}</span>
+      </button>`;
+    }).join('');
+    body=`<div class="${cls}">${opts}</div>`;
   }
 
-  // Build/extend the header row from the incoming keys.
-  var headers;
-  if (sheet.getLastRow() === 0) {
-    headers = Object.keys(data);
-    sheet.appendRow(headers);
-  } else {
-    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    var added = false;
-    Object.keys(data).forEach(function (k) {
-      if (headers.indexOf(k) === -1) { headers.push(k); added = true; }
+  const errText = (st.type==='choice'||st.type==='multi')?t.errPick:t.errAnswer;
+  const skipHint = st.optional
+    ? `<span class="skip-hint">${esc(t.optional)}</span>`
+    : `<span class="enter-hint">${esc(t.press)} <kbd>${esc(t.enter)} ↵</kbd></span>`;
+  const nextLabel = st.optional ? t.skip : t.ok;
+
+  return `<div class="wrap">
+    ${eb}<h2>${esc(st.q)}</h2>${hint}${body}
+    <div class="err" data-err>${esc(errText)}</div>
+    <div class="foot">
+      <button class="btn" data-next>${esc(nextLabel)} <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg></button>
+      ${skipHint}
+    </div>
+  </div>`;
+}
+
+function introHTML(){
+  const t=tr(), i=t.intro;
+  return `<div class="wrap">
+    <div class="eyebrow">${esc(i.eyebrow)}</div>
+    <div class="intro-art">
+      <div class="intro-copy">
+        <h1>${esc(i.h1)}</h1>
+        <p class="sub">${esc(i.sub)}</p>
+        <div class="anon-note">${i.note}</div>
+      </div>
+      <div class="flag">${flagSVG}</div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-next>${esc(t.start)} <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      <span class="enter-hint">${esc(t.press)} <kbd>${esc(t.enter)}</kbd></span>
+    </div>
+  </div>`;
+}
+
+function reviewHTML(){
+  const t=tr(), r=t.review;
+  return `<div class="wrap">
+    <div class="eyebrow">${esc(r.eyebrow)}</div>
+    <h2>${esc(r.h)}</h2>
+    <div class="summary" data-summary></div>
+    <p class="q-hint">${esc(r.note)}</p>
+    <div class="err" data-err>${esc(t.errSubmit)}</div>
+    <div class="foot">
+      <button class="btn" data-submit>${esc(r.confirm)}</button>
+      <button class="btn ghost" data-edit>${esc(r.edit)}</button>
+    </div>
+  </div>`;
+}
+
+function doneHTML(){
+  const t=tr(), d=t.done;
+  return `<div class="wrap">
+    <div class="done-mark"><svg viewBox="0 0 24 24"><path d="M4 12l6 6L20 6"/></svg></div>
+    <h1>${esc(d.h1)}</h1>
+    <p class="sub">${esc(d.sub)}</p>
+    <div class="meet">
+      <div class="lab">${esc(d.meetLab)}</div>
+      <div class="cal">${d.cal}</div>
+    </div>
+  </div>`;
+}
+
+/* ---------- navigation ---------- */
+let slides=[];
+function refreshSlides(){ slides=[...deck.children]; }
+
+function show(n){
+  idx=n;
+  slides.forEach((s,i)=>{
+    s.classList.toggle('active',i===idx);
+    s.classList.toggle('up',i<idx);
+  });
+  $('#rail span').style.width=(idx/(steps.length-1))*100+'%';
+  const st=steps[idx], t=tr();
+  const isQ = !!st.n;
+  $('#counter').innerHTML = isQ?`${esc(t.q)} <b>${st.n}</b> ${esc(t.of)} ${qCount()}`:'';
+
+  const inp=$('[data-inp]',slides[idx]);
+  if(inp){ inp.value=data[st.key]||''; setTimeout(()=>inp.focus(),300); }
+
+  // restore selections
+  if(st.type==='choice'){
+    slides[idx].querySelectorAll('.choice').forEach(c=>{
+      const j=+c.dataset.idx;
+      c.classList.toggle('sel', canonOpt(st.key,j)===data[st.key]);
     });
-    if (added) {
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    letterKeys=st.options.map((o,j)=>String.fromCharCode(65+j).toLowerCase());
+  } else if(st.type==='multi'){
+    const arr=data[st.key]||[];
+    slides[idx].querySelectorAll('.choice').forEach(c=>{
+      const j=+c.dataset.idx;
+      c.classList.toggle('sel', arr.includes(canonOpt(st.key,j)));
+    });
+    letterKeys=st.options.map((o,j)=>String.fromCharCode(65+j).toLowerCase());
+  } else if(st.type==='scale'){
+    slides[idx].querySelectorAll('[data-scale]').forEach(b=>
+      b.classList.toggle('sel', String(data[st.key])===b.dataset.v));
+    letterKeys=[];
+  } else if(st.type==='gridrate'){
+    const obj=data[st.key]||{};
+    slides[idx].querySelectorAll('[data-gridrate]').forEach(b=>
+      b.classList.toggle('sel', String(obj[b.dataset.row])===b.dataset.v));
+    letterKeys=[];
+  } else letterKeys=[];
+
+  if(st.type==='review') fillSummary();
+  if(st.type==='done') fireSubmit();
+}
+
+/* canonical (English) option value for a step + index */
+function canonOpt(stepKey, j){
+  const en=T.en.steps.find(s=>s.key===stepKey);
+  return en.options[j].v;
+}
+function dispOpt(stepKey, canonVal){
+  const en=T.en.steps.find(s=>s.key===stepKey);
+  const j=en.options.findIndex(o=>o.v===canonVal);
+  if(j<0) return canonVal;
+  return tr().steps.find(s=>s.key===stepKey).options[j].v;
+}
+
+function fillSummary(){
+  const t=tr();
+  const rows=[];
+  t.steps.forEach(s=>{
+    const v=data[s.key];
+    if(v===undefined||v===''||(Array.isArray(v)&&!v.length)) return;
+    let shown;
+    if(s.gridRate){
+      shown = s.rows.map(r=>`${r.l}: ${ (data[s.key]||{})[r.k] || '—' }`).join(' · ');
+    } else if(s.options && s.multi){
+      shown = v.map(cv=>dispOpt(s.key,cv)).join(', ');
+    } else if(s.options){
+      shown = dispOpt(s.key,v);
+    } else {
+      shown = v;
+    }
+    // question label: strip trailing punctuation, keep it short
+    rows.push([s.eyebrow, shown]);
+  });
+  // de-dup consecutive eyebrows into their own line is overkill; show Q + answer
+  const html = t.steps.filter(s=>{
+    const v=data[s.key];
+    return !(v===undefined||v===''||(Array.isArray(v)&&!v.length));
+  }).map(s=>{
+    let shown;
+    if(s.gridRate){
+      shown = s.rows.map(r=>`${r.l}: ${ (data[s.key]||{})[r.k] || '—' }`).join(' · ');
+    } else if(s.options && s.multi){
+      shown = (data[s.key]||[]).map(cv=>dispOpt(s.key,cv)).join(', ');
+    } else if(s.options){
+      shown = dispOpt(s.key,data[s.key]);
+    } else shown = data[s.key];
+    const label = s.q.length>52 ? s.q.slice(0,50)+'…' : s.q;
+    return `<div class="row"><span>${esc(label)}</span><b>${esc(String(shown))}</b></div>`;
+  }).join('');
+  $('[data-summary]',slides[idx]).innerHTML = html || `<div class="row"><span>—</span><b>—</b></div>`;
+}
+
+function validate(){
+  const st=steps[idx], t=tr();
+  const err=$('[data-err]',slides[idx]);
+  if(st.type==='input'||st.type==='textarea'){
+    const v=$('[data-inp]',slides[idx]).value.trim();
+    if(st.required&&!v){flash(err,t.errAnswer);return false;}
+    if(st.input==='email'&&v&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)){flash(err,t.errEmail);return false;}
+    data[st.key]=v;
+  }
+  if((st.type==='choice'||st.type==='scale')&&st.required&&(data[st.key]===undefined||data[st.key]==='')){
+    flash(err,t.errPick);return false;
+  }
+  if(st.type==='multi'&&st.required&&(!data[st.key]||!data[st.key].length)){
+    flash(err,t.errPick);return false;
+  }
+  if(st.type==='gridrate'&&st.required){
+    const obj=data[st.key]||{};
+    if(st.rows.some(r=>obj[r.k]===undefined)){flash(err,t.errPick);return false;}
+  }
+  if(err)err.classList.remove('show');
+  return true;
+}
+function flash(el,msg){if(el){el.textContent=msg;el.classList.add('show');}}
+
+function next(){ if(!validate())return; if(idx<steps.length-1)show(idx+1); }
+function prev(){ if(idx>0)show(idx-1); }
+
+/* ---------- events ---------- */
+deck.addEventListener('click',e=>{
+  if(e.target.closest('[data-next]'))next();
+  if(e.target.closest('[data-edit]'))prev();
+
+  const ch=e.target.closest('[data-choice]');
+  if(ch){
+    const stepKey=ch.dataset.key;
+    const slide=ch.closest('.slide');
+    const isMulti=ch.dataset.multi==='1';
+    const j=+ch.dataset.idx;
+    const canon=canonOpt(stepKey,j);
+    if(isMulti){
+      const arr=data[stepKey]?[...data[stepKey]]:[];
+      const at=arr.indexOf(canon);
+      if(at>=0){arr.splice(at,1);ch.classList.remove('sel');}
+      else{arr.push(canon);ch.classList.add('sel');}
+      data[stepKey]=arr;
+      $('[data-err]',slide)?.classList.remove('show');
+    } else {
+      slide.querySelectorAll('.choice').forEach(c=>c.classList.remove('sel'));
+      ch.classList.add('sel');
+      data[stepKey]=canon;
+      $('[data-err]',slide)?.classList.remove('show');
+      if(slide.classList.contains('active')) setTimeout(()=>{ if(slide.classList.contains('active')) next(); },340);
     }
   }
 
-  // Write the row in header order.
-  var row = headers.map(function (h) { return data[h] !== undefined ? data[h] : ''; });
-  sheet.appendRow(row);
+  const sc=e.target.closest('[data-scale]');
+  if(sc){
+    const slide=sc.closest('.slide');
+    slide.querySelectorAll('[data-scale]').forEach(b=>b.classList.remove('sel'));
+    sc.classList.add('sel');
+    data[sc.dataset.key]=+sc.dataset.v;
+    $('[data-err]',slide)?.classList.remove('show');
+    if(slide.classList.contains('active')) setTimeout(()=>{ if(slide.classList.contains('active')) next(); },340);
+  }
 
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+  const gr=e.target.closest('[data-gridrate]');
+  if(gr){
+    const slide=gr.closest('.slide');
+    const key=gr.dataset.key, row=gr.dataset.row;
+    slide.querySelectorAll(`[data-gridrate][data-row="${row}"]`).forEach(b=>b.classList.remove('sel'));
+    gr.classList.add('sel');
+    data[key]=Object.assign({}, data[key]||{}, {[row]:+gr.dataset.v});
+    $('[data-err]',slide)?.classList.remove('show');
+  }
 
-/**
- * Placeholder — replace with your existing registration logic.
- */
-function writeRegistration_(data) {
-  var ss = SpreadsheetApp.openById('YOUR_SPREADSHEET_ID');
-  var sheet = ss.getSheetByName('Registrations') || ss.insertSheet('Registrations');
-  if (sheet.getLastRow() === 0) sheet.appendRow(Object.keys(data));
-  sheet.appendRow(Object.keys(data).map(function (k) { return data[k]; }));
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true }))
-    .setMimeType(ContentService.MimeType.JSON);
+  if(e.target.closest('[data-submit]'))submit();
+});
+
+document.addEventListener('keydown',e=>{
+  const st=steps[idx];
+  if(e.key==='Enter'){
+    if(st.type==='textarea' && !e.metaKey && !e.ctrlKey) return; // allow newlines
+    if(st.type==='review'){submit();return;}
+    if(st.type==='done')return;
+    e.preventDefault();next();
+  }
+  if((st.type==='choice'||st.type==='multi')&&letterKeys.includes(e.key.toLowerCase())){
+    const c=slides[idx].querySelector(`.choice[data-k="${e.key.toUpperCase()}"]`);
+    if(c)c.click();
+  }
+});
+
+/* ---------- language toggle ---------- */
+function setLang(l){
+  if(l===lang) return;
+  lang=l;
+  document.documentElement.lang=l;
+  syncLangButtons();
+  steps=buildSteps();
+  const keep=idx;
+  renderDeck(); refreshSlides();
+  show(Math.min(keep, steps.length-1));
 }
+function syncLangButtons(){
+  document.querySelectorAll('#lang button').forEach(b=>
+    b.classList.toggle('on', b.dataset.lang===lang));
+}
+document.querySelectorAll('#lang button').forEach(b=>
+  b.addEventListener('click',()=>setLang(b.dataset.lang)));
+
+/* ---------- submit ---------- */
+let submitted=false;
+function submit(){
+  if(submitted)return;
+  const btn=$('[data-submit]',slides[idx]);
+  const err=$('[data-err]',slides[idx]);
+  const t=tr();
+  err?.classList.remove('show');
+
+  const payload={ formType:'feedback', lang:lang, ts:new Date().toISOString() };
+  T.en.steps.forEach(s=>{
+    let v=data[s.key];
+    if(Array.isArray(v)) v=v.join('; ');
+    else if(v&&typeof v==='object') v=Object.keys(v).map(k=>`${k}:${v[k]}`).join('; ');
+    payload[s.key]= v===undefined?'':v;
+  });
+
+  if(!ENDPOINT){ submitted=true; show(steps.length-1); return; }
+  btn.disabled=true; btn.innerHTML=`<span class="spin"></span> ${esc(t.sending)}`;
+  fetch(ENDPOINT,{method:'POST',mode:'no-cors',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(payload)})
+    .then(()=>{ submitted=true; show(steps.length-1); })
+    .catch(()=>{
+      btn.disabled=false;btn.textContent=t.review.confirm;
+      flash(err,t.errSave);
+    });
+}
+function fireSubmit(){ if(!ENDPOINT&&!submitted)submitted=true; }
+
+/* ---------- init ---------- */
+syncLangButtons();
+renderDeck(); refreshSlides();
+show(0);
+</script>
+</body>
+</html>
