@@ -52,7 +52,11 @@
     transform:translateY(38px);
     transition:opacity .45s ease,transform .55s cubic-bezier(.19,1,.22,1);
     pointer-events:none;z-index:1;
+    overflow-y:auto;-webkit-overflow-scrolling:touch;
   }
+  /* When content is taller than the viewport, top-align so nothing is clipped */
+  @media (max-height:760px){ .slide{align-items:flex-start} }
+  .slide.tall{align-items:flex-start}
   .slide.active{opacity:1;visibility:visible;transform:none;pointer-events:auto;z-index:2}
   .slide.up{transform:translateY(-38px)}
   .wrap{width:100%;max-width:660px}
@@ -158,10 +162,10 @@
   .anon-note b{color:var(--ink)}
 
   .summary{margin-top:26px;border:1.5px solid var(--line);border-radius:14px;overflow:hidden;background:rgba(255,255,255,.5)}
-  .summary .row{display:flex;justify-content:space-between;gap:16px;padding:13px 18px;border-bottom:1px solid var(--line);font-size:.95rem}
+  .summary .row{display:flex;flex-direction:column;gap:3px;padding:12px 18px;border-bottom:1px solid var(--line);font-size:.95rem}
   .summary .row:last-child{border-bottom:0}
-  .summary .row span{color:var(--muted);flex:0 0 auto;max-width:45%}
-  .summary .row b{font-weight:600;text-align:right}
+  .summary .row span{color:var(--muted);font-size:.78rem;letter-spacing:.02em}
+  .summary .row b{font-weight:600;text-align:left;color:var(--ink)}
 
   .done-mark{width:64px;height:64px;border-radius:50%;background:var(--ok);display:grid;place-items:center;margin-bottom:24px;box-shadow:0 14px 30px -12px var(--ok)}
   .done-mark svg{width:30px;height:30px;stroke:#fff;stroke-width:3;fill:none}
@@ -210,7 +214,7 @@
 
 <div id="deck"></div>
 <div id="counter"></div>
-<div style="position:fixed;bottom:6px;right:10px;z-index:50;font-size:.6rem;letter-spacing:.1em;color:var(--muted);opacity:.6;font-family:'Inter',sans-serif">v2 · skip/next</div>
+<div style="position:fixed;bottom:6px;right:10px;z-index:50;font-size:.6rem;letter-spacing:.1em;color:var(--muted);opacity:.6;font-family:'Inter',sans-serif">v3 · scroll fix</div>
 
 <script>
 /* ==== CONFIG ============================================================ */
@@ -277,7 +281,7 @@ const T = {
         options:[{v:'Yes'},{v:'Probably'},{v:'Unsure'},{v:'No'}]},
       {key:'topics2027',eyebrow:'Looking ahead · LAA 2027',q:'What topics, themes, or sessions would you like to see in 2027?',textarea:true,optional:true,placeholder:'Your suggestions…'},
       {key:'formats',eyebrow:'Looking ahead · LAA 2027',q:'Which formats interest you most?',multi:true,grid:true,
-        options:[{v:'Talks'},{v:'Workshops'},{v:'Panels'},{v:'Networking'},{v:'Tutorials'},{v:'Poster sessions'}]},
+        options:[{v:'Talks'},{v:'Workshops'},{v:'Panels'},{v:'Networking'},{v:'Tutorials'}]},
       {key:'speakers',eyebrow:'Looking ahead · LAA 2027',q:'Are there speakers or organizations you\u2019d like us to invite?',textarea:true,optional:true,placeholder:'Optional…'},
       {key:'suggestions',eyebrow:'Looking ahead · LAA 2027',q:'Any suggestions to improve the overall event?',textarea:true,optional:true,placeholder:'Optional…'},
 
@@ -346,7 +350,7 @@ const T = {
         options:[{v:'Oui'},{v:'Probablement'},{v:'Incertain·e'},{v:'Non'}]},
       {key:'topics2027',eyebrow:'Perspectives · LAA 2027',q:'Quels sujets, thèmes ou séances aimeriez-vous voir en 2027 ?',textarea:true,optional:true,placeholder:'Vos suggestions…'},
       {key:'formats',eyebrow:'Perspectives · LAA 2027',q:'Quels formats vous intéressent le plus ?',multi:true,grid:true,
-        options:[{v:'Conférences'},{v:'Ateliers'},{v:'Tables rondes'},{v:'Réseautage'},{v:'Tutoriels'},{v:'Séances d\u2019affiches'}]},
+        options:[{v:'Conférences'},{v:'Ateliers'},{v:'Tables rondes'},{v:'Réseautage'},{v:'Tutoriels'}]},
       {key:'speakers',eyebrow:'Perspectives · LAA 2027',q:'Y a-t-il des intervenant·e·s ou des organismes que vous aimeriez que nous invitions ?',textarea:true,optional:true,placeholder:'Facultatif…'},
       {key:'suggestions',eyebrow:'Perspectives · LAA 2027',q:'Avez-vous des suggestions pour améliorer l\u2019événement dans son ensemble ?',textarea:true,optional:true,placeholder:'Facultatif…'},
 
@@ -570,6 +574,16 @@ function show(n){
 
   if(st.type==='review') fillSummary();
   if(st.type==='done') fireSubmit();
+
+  // If this slide's content is taller than the viewport, top-align it and
+  // reset its scroll to the top so the start of the content is visible.
+  const cur=slides[idx];
+  requestAnimationFrame(()=>{
+    const wrap=cur.querySelector('.wrap');
+    const tall = wrap && wrap.scrollHeight > (cur.clientHeight - 40);
+    cur.classList.toggle('tall', !!tall);
+    cur.scrollTop = 0;
+  });
 }
 
 /* canonical (English) option value for a step + index */
