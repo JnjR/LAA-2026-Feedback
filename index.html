@@ -229,7 +229,7 @@ const flagSVG = `<svg viewBox="0 0 90 60"><rect width="90" height="30" fill="#00
 const T = {
   en:{
     press:'press', enter:'Enter', ok:'OK', start:'Start',
-    q:'Question', of:'of', optional:'Optional — you can skip', skip:'Skip',
+    q:'Question', of:'of', optional:'Optional — type an answer or skip', skip:'Skip', nextBtn:'Next',
     errAnswer:'Please add an answer to continue.',
     errPick:'Please pick an option to continue.',
     errEmail:'That email looks off — mind checking it?',
@@ -298,7 +298,7 @@ const T = {
   },
   fr:{
     press:'appuyez sur', enter:'Entrée', ok:'OK', start:'Commencer',
-    q:'Question', of:'sur', optional:'Facultatif — vous pouvez passer', skip:'Passer',
+    q:'Question', of:'sur', optional:'Facultatif — répondez ou passez', skip:'Passer', nextBtn:'Suivant',
     errAnswer:'Veuillez répondre pour continuer.',
     errPick:'Veuillez choisir une option pour continuer.',
     errEmail:'Cette adresse semble incorrecte — pouvez-vous vérifier ?',
@@ -460,12 +460,13 @@ function buildSlide(st){
     ? `<span class="skip-hint">${esc(t.optional)}</span>`
     : `<span class="enter-hint">${esc(t.press)} <kbd>${esc(t.enter)} ↵</kbd></span>`;
   const nextLabel = st.optional ? t.skip : t.ok;
+  const chk = ` <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>`;
 
   return `<div class="wrap">
     ${eb}<h2>${esc(st.q)}</h2>${hint}${body}
     <div class="err" data-err>${esc(errText)}</div>
     <div class="foot">
-      <button class="btn" data-next>${esc(nextLabel)} <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg></button>
+      <button class="btn" data-next data-skiplabel="${esc(t.skip)}" data-nextlabel="${esc(t.nextBtn)}"><span data-btnlabel>${esc(nextLabel)}</span>${chk}</button>
       ${skipHint}
     </div>
   </div>`;
@@ -534,7 +535,12 @@ function show(n){
   $('#counter').innerHTML = isQ?`${esc(t.q)} <b>${st.n}</b> ${esc(t.of)} ${qCount()}`:'';
 
   const inp=$('[data-inp]',slides[idx]);
-  if(inp){ inp.value=data[st.key]||''; setTimeout(()=>inp.focus(),300); }
+  if(inp){ inp.value=data[st.key]||''; setTimeout(()=>inp.focus(),300);
+    if(st.optional){
+      updateBtnLabel(slides[idx], inp.value);
+      inp.oninput=()=>updateBtnLabel(slides[idx], inp.value);
+    }
+  }
 
   // restore selections
   if(st.type==='choice'){
@@ -638,6 +644,13 @@ function validate(){
   return true;
 }
 function flash(el,msg){if(el){el.textContent=msg;el.classList.add('show');}}
+function updateBtnLabel(slide, val){
+  const btn=slide.querySelector('[data-next]');
+  const lbl=btn&&btn.querySelector('[data-btnlabel]');
+  if(!btn||!lbl)return;
+  const hasText=(val||'').trim().length>0;
+  lbl.textContent = hasText ? btn.dataset.nextlabel : btn.dataset.skiplabel;
+}
 
 function next(){ if(!validate())return; if(idx<steps.length-1)show(idx+1); }
 function prev(){ if(idx>0)show(idx-1); }
